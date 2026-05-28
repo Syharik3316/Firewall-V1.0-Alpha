@@ -37,7 +37,8 @@ def log_event(event_type, dest_port, src_port, protocol, reason):
     log_entry = f"{datetime.now().strftime('%Y-%m-%d %H:%M:%S')} - {event_type}: dest_port={dest_port}, src_port={src_port}, protocol={protocol}, reason={reason}\n"
     
     try:
-        os.makedirs(os.path.dirname(LOG_FILE), exist_ok=True)
+        log_dir = os.path.dirname(os.path.abspath(LOG_FILE))
+        os.makedirs(log_dir, exist_ok=True)
         with open(LOG_FILE, 'a') as f:
             f.write(log_entry)
     except Exception as e:
@@ -117,7 +118,7 @@ def show_settings():
     print(f"│ Разрешить ICMP: {'Да' if allow_icmp else 'Нет':<23}")
     print(f"│ Стандартные порты: {', '.join(map(str, default_ports)):15}")
     print(f"│ Пользовательские порты: {', '.join(map(str, custom_ports)):16}")
-    print(f"│ Разрешеныне порты: {', '.join(map(str, set(default_ports + custom_ports))):14}")
+    print(f"│ Разрешённые порты: {', '.join(map(str, set(default_ports + custom_ports))):14}")
     print(" └──────────────────────────────────┘")
 
 def view_logs():
@@ -156,7 +157,7 @@ def interactive_remove_ports():
         show_settings()
     else:
         print("\nПорт не был введен.")
-    input("\nPНажмите Enter для продолжения...")
+    input("\nНажмите Enter для продолжения...")
 
 def toggle_setting(setting_name, current_value):
     new_value = not current_value
@@ -178,7 +179,7 @@ def advanced_settings():
         print(" ║ 4. Назад в главное меню          ║")
         print(" ╚══════════════════════════════════╝")
         
-        choice = input("\nSВыбор настройки (1-4): ")
+        choice = input("\nВыбор настройки (1-4): ")
         
         if choice == '1':
             strict_mode = toggle_setting('strict_mode', strict_mode)
@@ -344,19 +345,21 @@ int filter_traffic(struct xdp_md *ctx) {
         u16 src_port = bpf_ntohs(tcp->source);
 
         u8 *allowed = allowed_ports.lookup(&dest_port);
-        if (!allowed && !allowed_ports.lookup(&src_port)) {
+        if (!allowed) {
             bpf_trace_printk("BLOCKED: Port %d not in allowed list\\n", dest_port);
             return XDP_DROP;
         }
 
         if (//STRICT_MODE) {
             if (dest_port == 80 || src_port == 80) {
+                if (tcp->syn || tcp->fin || tcp->rst) return XDP_PASS;
                 if (!is_http(tcp, data_end)) {
                     bpf_trace_printk("BLOCKED: Non-HTTP traffic on port 80\\n");
                     return XDP_DROP;
                 }
             }
             else if (dest_port == 443 || src_port == 443) {
+                if (tcp->syn || tcp->fin || tcp->rst) return XDP_PASS;
                 if (!is_https(tcp, data_end)) {
                     bpf_trace_printk("BLOCKED: Non-HTTPS traffic on port 443\\n");
                     return XDP_DROP;
